@@ -1,0 +1,9 @@
+asgiref==3.10.0
+decouple==0.0.7
+Django==5.2.7
+djangorestframework==3.16.1
+dnspython==2.8.0
+mongoengine==0.29.1
+pymongo==4.15.2
+sqlparse==0.5.3
+tzdata==2025.2
