@@ -1,6 +1,7 @@
-from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.views import APIView
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth.hashers import check_password
 from django.utils import timezone
@@ -20,13 +21,13 @@ from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer, ChangePasswordSerializer
 )
 from .services import NoteService, PromotionService, NotificationService, AuthTokenService
+
 try:
     from .permissions import (
         IsDeveloppeur, IsAdmin, IsProfesseur, IsParent,
         CanManageUsers, CanManageEleves, CanManageNotes
     )
 except ImportError:
-    # Permissions par défaut si le fichier permissions.py n'existe pas
     IsDeveloppeur = IsAuthenticated
     IsAdmin = IsAuthenticated
     IsProfesseur = IsAuthenticated
@@ -44,7 +45,6 @@ def register(request):
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        # Créer un token pour l'utilisateur
         token = AuthTokenService.create_token(user)
         return Response({
             'message': 'Utilisateur créé avec succès',
@@ -57,7 +57,6 @@ def register(request):
             },
             'token': token.key
         }, status=status.HTTP_201_CREATED)
-    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -67,8 +66,8 @@ def login(request):
     serializer = UserLoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
-        # Créer un token pour l'utilisateur
         token = AuthTokenService.create_token(user)
+    
         return Response({
             'message': 'Connexion réussie',
             'user': {
@@ -81,20 +80,17 @@ def login(request):
             },
             'token': token.key
         }, status=status.HTTP_200_OK)
-    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout(request):
     """Déconnexion d'un utilisateur"""
-    # Récupérer le token de l'en-tête Authorization
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
     if auth_header.startswith('Token '):
         token_key = auth_header.split(' ')[1]
         if AuthTokenService.delete_token(token_key):
             return Response({'message': 'Déconnexion réussie'}, status=status.HTTP_200_OK)
-    
     return Response({'message': 'Erreur lors de la déconnexion'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT'])
@@ -102,11 +98,9 @@ def logout(request):
 def profile(request):
     """Consultation et modification du profil utilisateur"""
     user = request.user
-    
     if request.method == 'GET':
         serializer = UserProfileSerializer(user)
         return Response(serializer.data)
-    
     elif request.method == 'PUT':
         serializer = UserProfileSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
@@ -125,7 +119,6 @@ def change_password(request):
     if serializer.is_valid():
         serializer.save()
         return Response({'message': 'Mot de passe modifié avec succès'})
-    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
@@ -139,7 +132,7 @@ def token_info(request):
         try:
             token = AuthToken.objects.get(key=token_key)
             return Response({
-                'token_key': token.key[:10] + '...',  # Masquer une partie du token
+                'token_key': token.key[:10] + '...',
                 'created': token.created,
                 'user': {
                     'id': str(token.user.id),
@@ -149,137 +142,203 @@ def token_info(request):
             })
         except AuthToken.DoesNotExist:
             return Response({'error': 'Token invalide'}, status=status.HTTP_400_BAD_REQUEST)
-    
     return Response({'error': 'Aucun token fourni'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def refresh_token(request):
-    """Actualiser le token (créer un nouveau token)"""
-    # Supprimer l'ancien token
+    """Actualiser le token"""
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
     if auth_header.startswith('Token '):
         old_token_key = auth_header.split(' ')[1]
         AuthTokenService.delete_token(old_token_key)
-    
-    # Créer un nouveau token
     new_token = AuthTokenService.create_token(request.user)
-    
     return Response({
         'message': 'Token actualisé avec succès',
         'token': new_token.key
     })
 
-# ============ VIEWSETS POUR L'API REST ============
-    CanManageUsers = IsAuthenticated
-    CanManageEleves = IsAuthenticated
-    CanManageNotes = IsAuthenticated
+# ============ APIView DE BASE POUR CRUD ============
 
-# Base ViewSet personnalisé pour mongoengine
-class MongoViewSet(viewsets.ViewSet):
-    """ViewSet personnalisé pour mongoengine documents"""
-    queryset = None
-    serializer_class = None
+class BaseMongoAPIView(APIView):
+    """Classe de base pour tous les APIView MongoDB"""
     permission_classes = [IsAuthenticated]
+    serializer_class = None
+    model_class = None
     
-    def get_queryset(self):
-        return self.queryset.objects.all()
+    def get(self, request, pk=None):
+        """Récupérer un ou plusieurs objets"""
+        if pk:
+            try:
+                obj = self.model_class.objects.get(id=pk)
+                serializer = self.serializer_class(obj)
+                return Response(serializer.data)
+            except self.model_class.DoesNotExist:
+                return Response(
+                    {'error': 'Objet non trouvé'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            objects = self.model_class.objects.all()
+            serializer = self.serializer_class([obj for obj in objects], many=True)
+            return Response(serializer.data)
     
-    def list(self, request):
-        queryset = self.get_queryset()
-        serializer = self.serializer_class([obj for obj in queryset], many=True)
-        return Response(serializer.data)
-    
-    def create(self, request):
+    def post(self, request):
+        """Créer un nouvel objet"""
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    def retrieve(self, request, pk=None):
+    def put(self, request, pk):
+        """Mettre à jour complètement un objet"""
         try:
-            obj = self.queryset.objects.get(id=pk)
-            serializer = self.serializer_class(obj)
-            return Response(serializer.data)
-        except self.queryset.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-    
-    def update(self, request, pk=None):
-        try:
-            obj = self.queryset.objects.get(id=pk)
+            obj = self.model_class.objects.get(id=pk)
             serializer = self.serializer_class(obj, data=request.data)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except self.queryset.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+        except self.model_class.DoesNotExist:
+            return Response(
+                {'error': 'Objet non trouvé'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
     
-    def destroy(self, request, pk=None):
+    def patch(self, request, pk):
+        """Mettre à jour partiellement un objet"""
         try:
-            obj = self.queryset.objects.get(id=pk)
+            obj = self.model_class.objects.get(id=pk)
+            serializer = self.serializer_class(obj, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except self.model_class.DoesNotExist:
+            return Response(
+                {'error': 'Objet non trouvé'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    def delete(self, request, pk):
+        """Supprimer un objet"""
+        try:
+            obj = self.model_class.objects.get(id=pk)
             obj.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        except self.queryset.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+        except self.model_class.DoesNotExist:
+            return Response(
+                {'error': 'Objet non trouvé'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-class UserViewSet(MongoViewSet):
-    queryset = User
+# ============ APIView POUR CHAQUE MODÈLE ============
+
+class UserAPIView(BaseMongoAPIView):
     serializer_class = UserSerializer
+    model_class = User
 
-class EleveViewSet(MongoViewSet):
-    queryset = Eleve
+class EleveAPIView(BaseMongoAPIView):
     serializer_class = EleveSerializer
+    model_class = Eleve
 
-class ClasseViewSet(MongoViewSet):
-    queryset = Classe
+class ClasseAPIView(BaseMongoAPIView):
     serializer_class = ClasseSerializer
+    model_class = Classe
 
-class MatiereViewSet(MongoViewSet):
-    queryset = Matiere
+class MatiereAPIView(BaseMongoAPIView):
     serializer_class = MatiereSerializer
+    model_class = Matiere
 
-class DevoirViewSet(MongoViewSet):
-    queryset = Devoir
+class DevoirAPIView(BaseMongoAPIView):
     serializer_class = DevoirSerializer
+    model_class = Devoir
     
-    def create(self, request, *args, **kwargs):
-        """Créer un devoir et envoyer des notifications automatiques"""
-        response = super().create(request, *args, **kwargs)
-        if response.status_code == 201:
+    def post(self, request):
+        """Créer un devoir avec notifications"""
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            devoir = serializer.save()
             # Créer des notifications pour les parents
-            devoir_id = response.data['id']
-            NotificationService.creer_notification_devoir(devoir_id)
-        return response
+            NotificationService.creer_notification_devoir(str(devoir.id))
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class AnneeScolaireViewSet(MongoViewSet):
-    queryset = AnneeScolaire
+class AnneeScolaireAPIView(BaseMongoAPIView):
     serializer_class = AnneeScolaireSerializer
+    model_class = AnneeScolaire
 
-class TrimestreViewSet(MongoViewSet):
-    queryset = Trimestre
+class TrimestreAPIView(BaseMongoAPIView):
     serializer_class = TrimestreSerializer
+    model_class = Trimestre
 
-class PeriodeViewSet(MongoViewSet):
-    queryset = Periode
+class PeriodeAPIView(BaseMongoAPIView):
     serializer_class = PeriodeSerializer
+    model_class = Periode
 
-class InterrogationViewSet(MongoViewSet):
-    queryset = Interrogation
+class InterrogationAPIView(BaseMongoAPIView):
     serializer_class = InterrogationSerializer
+    model_class = Interrogation
 
-class ExamenViewSet(MongoViewSet):
-    queryset = Examen
+class ExamenAPIView(BaseMongoAPIView):
     serializer_class = ExamenSerializer
+    model_class = Examen
 
-class NoteTrimestrielleViewSet(MongoViewSet):
-    queryset = NoteTrimestrielle
+class NoteTrimestrielleAPIView(BaseMongoAPIView):
     serializer_class = NoteTrimestrielleSerializer
+    model_class = NoteTrimestrielle
+
+class NoteAnnuelleAPIView(BaseMongoAPIView):
+    serializer_class = NoteAnnuelleSerializer
+    model_class = NoteAnnuelle
+
+class MessageAPIView(BaseMongoAPIView):
+    serializer_class = MessageSerializer
+    model_class = Message
     
-    @action(detail=False, methods=['post'])
-    def calculer_notes_trimestrielles(self, request):
-        """Calcul automatique des notes trimestrielles : 50% travaux + 50% examens"""
+    def post(self, request):
+        """Créer un message avec notification"""
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            message = serializer.save()
+            # Créer une notification pour le destinataire
+            NotificationService.creer_notification_message(str(message.id))
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class NotificationAPIView(BaseMongoAPIView):
+    serializer_class = NotificationSerializer
+    model_class = Notification
+    
+    def get(self, request, pk=None):
+        """Récupérer uniquement les notifications de l'utilisateur connecté"""
+        if pk:
+            try:
+                notification = Notification.objects.get(id=pk, destinataire=request.user)
+                serializer = self.serializer_class(notification)
+                return Response(serializer.data)
+            except Notification.DoesNotExist:
+                return Response(
+                    {'error': 'Notification non trouvée'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            notifications = Notification.objects.filter(destinataire=request.user)
+            serializer = self.serializer_class([notif for notif in notifications], many=True)
+            return Response(serializer.data)
+
+class EmploiDuTempsAPIView(BaseMongoAPIView):
+    serializer_class = EmploiDuTempsSerializer
+    model_class = EmploiDuTemps
+
+# ============ APIView POUR OPÉRATIONS COMPLEXES ============
+
+class CalculNotesTrimestriellesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Calcul automatique des notes trimestrielles"""
         if not (request.user.role in ['admin', 'developpeur', 'professeur']):
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
@@ -323,13 +382,11 @@ class NoteTrimestrielleViewSet(MongoViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class NoteAnnuelleViewSet(MongoViewSet):
-    queryset = NoteAnnuelle
-    serializer_class = NoteAnnuelleSerializer
+class PromotionAutomatiqueAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     
-    @action(detail=False, methods=['post'])
-    def promotion_automatique(self, request):
-        """Promotion automatique des élèves ayant atteint le seuil"""
+    def post(self, request):
+        """Promotion automatique des élèves"""
         if not (request.user.role in ['admin', 'developpeur']):
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
@@ -363,29 +420,16 @@ class NoteAnnuelleViewSet(MongoViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class MessageViewSet(MongoViewSet):
-    queryset = Message
-    serializer_class = MessageSerializer
+class GestionNotificationsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     
-    def create(self, request, *args, **kwargs):
-        """Créer un message et envoyer une notification automatique"""
-        response = super().create(request, *args, **kwargs)
-        if response.status_code == 201:
-            # Créer une notification pour le destinataire
-            message_id = response.data['id']
-            NotificationService.creer_notification_message(message_id)
-        return response
-
-class NotificationViewSet(MongoViewSet):
-    queryset = Notification
-    serializer_class = NotificationSerializer
+    def post(self, request):
+        """Marquer toutes les notifications comme lues"""
+        result = NotificationService.marquer_notifications_lues(str(request.user.id))
+        return Response(result)
     
-    def get_queryset(self):
-        return Notification.objects.filter(destinataire=self.request.user)
-    
-    @action(detail=True, methods=['patch'])
-    def marquer_lu(self, request, pk=None):
-        """Marquer une notification comme lue"""
+    def patch(self, request, pk):
+        """Marquer une notification spécifique comme lue"""
         try:
             notification = Notification.objects.get(id=pk, destinataire=request.user)
             notification.lu = True
@@ -393,13 +437,3 @@ class NotificationViewSet(MongoViewSet):
             return Response({'status': 'notification marquée comme lue'})
         except Notification.DoesNotExist:
             return Response({'error': 'Notification introuvable'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=False, methods=['post'])
-    def marquer_toutes_lues(self, request):
-        """Marquer toutes les notifications comme lues"""
-        result = NotificationService.marquer_notifications_lues(str(request.user.id))
-        return Response(result)
-
-class EmploiDuTempsViewSet(MongoViewSet):
-    queryset = EmploiDuTemps
-    serializer_class = EmploiDuTempsSerializer

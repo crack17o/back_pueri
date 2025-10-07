@@ -11,17 +11,49 @@ class TimestampMixin:
         self.updatedAt = datetime.utcnow()
         return super().save(*args, **kwargs)
 
-#User
+# User
 class User(me.Document, TimestampMixin):
-	nom = me.StringField(required=True)
-	prenom = me.StringField(required=True)
-	email = me.StringField(required=True, unique=True)
-	motDePasse = me.StringField(required=True)
-	role = me.StringField(choices=["parent","professeur","admin","developpeur"], required=True)
-	telephone = me.StringField()
-	enfants = me.ListField(me.ReferenceField('Eleve'))
-	createdAt = me.DateTimeField()
-	updatedAt = me.DateTimeField()
+    nom = me.StringField(required=True)
+    prenom = me.StringField(required=True)
+    email = me.StringField(required=True, unique=True)
+    motDePasse = me.StringField(required=True)
+    role = me.StringField(choices=["parent","professeur","admin","developpeur"], required=True)
+    telephone = me.StringField()
+    enfants = me.ListField(me.ReferenceField('Eleve'))
+    createdAt = me.DateTimeField()
+    updatedAt = me.DateTimeField()
+    
+    # Attributs requis pour Django REST Framework
+    @property
+    def is_authenticated(self):
+        """Toujours retourner True pour les utilisateurs authentifiés"""
+        return True
+    
+    @property
+    def is_anonymous(self):
+        """Toujours retourner False - pas d'utilisateurs anonymes"""
+        return False
+    
+    @property
+    def is_active(self):
+        """Toujours actif pour le moment"""
+        return True
+    
+    @property
+    def is_staff(self):
+        """Staff si admin ou développeur"""
+        return self.role in ['admin', 'developpeur']
+    
+    @property
+    def is_superuser(self):
+        """Superuser si développeur"""
+        return self.role == 'developpeur'
+    
+    def get_username(self):
+        return self.email
+    
+    def __str__(self):
+        return f"{self.prenom} {self.nom} ({self.email})"
 
 #Eleve
 class Eleve(me.Document, TimestampMixin):
