@@ -67,15 +67,15 @@ WSGI_APPLICATION = 'gestion_scolaire.wsgi.application'
 MONGODB_URI = "mongodb+srv://jelly:bJByktwM0hRaT0xU@cluster0.94mrjki.mongodb.net/gestion_scolaire_db?retryWrites=true&w=majority&appName=Cluster0"
 
 # Connexion MongoDB
-# try:
-#     mongoengine.connect(
-#         host=MONGODB_URI,
-#         alias='default',
-#         db='gestion_scolaire_db'
-#     )
-#     print("Connexion MongoDB Atlas etablie avec succes!")
-# except Exception as e:
-#     print(f"Erreur de connexion MongoDB: {e}")
+try:
+    mongoengine.connect(
+         host=MONGODB_URI,
+         alias='default',
+         db='gestion_scolaire_db'
+     )
+    print("Connexion MongoDB Atlas etablie avec succes!")
+except Exception as e:
+    print(f"Erreur de connexion MongoDB: {e}")
 
 # Configuration Django database (requise pour les fonctionnalités Django)
 DATABASES = {
