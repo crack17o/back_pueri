@@ -12,7 +12,7 @@ class UserRegistrationSerializer(serializers.Serializer):
     prenom = serializers.CharField(max_length=100)
     email = serializers.EmailField()
     motDePasse = serializers.CharField(min_length=6, write_only=True)
-    role = serializers.ChoiceField(choices=['parent', 'professeur'], default='parent')
+    role = serializers.ChoiceField(choices=["parent","professeur","admin","developpeur"], default='parent')
     telephone = serializers.CharField(max_length=20, required=False)
     
     def validate_email(self, value):
@@ -33,7 +33,7 @@ class UserLoginSerializer(serializers.Serializer):
     def validate(self, data):
         email = data.get('email')
         motDePasse = data.get('motDePasse')
-        
+        print(motDePasse)
         if email and motDePasse:
             try:
                 user = User.objects.get(email=email)

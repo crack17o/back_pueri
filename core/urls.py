@@ -60,6 +60,7 @@ urlpatterns = [
     # Opérations complexes
     path('api/calcul-notes-trimestrielles/', views.CalculNotesTrimestriellesAPIView.as_view(), name='calcul-notes'),
     path('api/promotion-automatique/', views.PromotionAutomatiqueAPIView.as_view(), name='promotion-auto'),
+    path('api/affecter-parent/', views.AffecterParentAPIView.as_view(), name='affecter-parent'),
     path('api/gestion-notifications/', views.GestionNotificationsAPIView.as_view(), name='gestion-notifications'),
     path('api/marquer-notification-lue/<str:pk>/', views.GestionNotificationsAPIView.as_view(), name='marquer-notification-lue'),
     
