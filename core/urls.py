@@ -63,6 +63,7 @@ urlpatterns = [
     path('api/affecter-parent/', views.AffecterParentAPIView.as_view(), name='affecter-parent'),
     path('api/gestion-notifications/', views.GestionNotificationsAPIView.as_view(), name='gestion-notifications'),
     path('api/marquer-notification-lue/<str:pk>/', views.GestionNotificationsAPIView.as_view(), name='marquer-notification-lue'),
+    path('api/affecter-professeur/', views.AffecterProfesseurAPIView.as_view(), name='affecter-professeur'),
     
     # Interface DRF
     path('api-auth/', include('rest_framework.urls')),

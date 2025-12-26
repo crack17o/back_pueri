@@ -26,7 +26,7 @@ class User(me.Document, TimestampMixin):
     # Attributs requis pour Django REST Framework
     @property
     def is_authenticated(self):
-        """Toujours retourner True pour les utilisateurs authentifiés"""
+        """Toujours retourner True pour les utilisateu rs authentifiés"""
         return True
     
     @property

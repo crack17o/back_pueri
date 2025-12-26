@@ -594,3 +594,79 @@ class GestionNotificationsAPIView(APIView):
             return Response(
                 {"error": "Notification introuvable"}, status=status.HTTP_404_NOT_FOUND
             )
+
+
+class AffecterProfesseurAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Affecter des matières et/ou des classes à un professeur"""
+        if not (request.user.role in ["admin", "developpeur", "professeur"]):
+            return Response(
+                {"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        professeur_id = request.data.get("professeur_id")
+        matiere_ids = request.data.get("matiere_ids", [])
+        classe_ids = request.data.get("classe_ids", [])
+
+        if not professeur_id:
+            return Response(
+                {"error": "professeur_id required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not matiere_ids and not classe_ids:
+            return Response(
+                {"error": "matiere_ids or classe_ids required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            professeur = User.objects.get(id=professeur_id, role="professeur")
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Professeur not found or not a professeur"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        assigned_matieres = []
+        assigned_classes = []
+
+        # Affecter les matières directement
+        for matiere_id in matiere_ids:
+            try:
+                matiere = Matiere.objects.get(id=matiere_id)
+                matiere.professeur = professeur
+                matiere.save()
+                assigned_matieres.append({
+                    "matiere_id": str(matiere.id),
+                    "matiere_nom": matiere.nom,
+                })
+            except Matiere.DoesNotExist:
+                pass  # Ignore silently or collect errors
+
+        # Affecter toutes les matières des classes spécifiées
+        for classe_id in classe_ids:
+            try:
+                classe = Classe.objects.get(id=classe_id)
+                matieres_classe = Matiere.objects.filter(classe=classe)
+                for matiere in matieres_classe:
+                    matiere.professeur = professeur
+                    matiere.save()
+                    assigned_matieres.append({
+                        "matiere_id": str(matiere.id),
+                        "matiere_nom": matiere.nom,
+                        "classe_nom": classe.nom,
+                    })
+                assigned_classes.append({
+                    "classe_id": str(classe.id),
+                    "classe_nom": classe.nom,
+                })
+            except Classe.DoesNotExist:
+                pass  # Ignore silently
+
+        response_data = {
+            "message": f"Affecté {len(assigned_matieres)} matière(s) au professeur {professeur.prenom} {professeur.nom}",
+            "assigned_matieres": assigned_matieres,
+            "assigned_classes": assigned_classes,
+        }
+
+        return Response(response_data)
