@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from .models import (
     User, Eleve, Classe, Matiere, Devoir, AnneeScolaire, 
     Trimestre, Periode, Interrogation, Examen, NoteTrimestrielle, 
-    NoteAnnuelle, Message, Notification, EmploiDuTemps, AuthToken
+    NoteAnnuelle, Message, Notification, EmploiDuTemps, AuthToken, Subdivision
 )
 
 # Serializers d'authentification
@@ -144,15 +144,50 @@ class EleveSerializer(BaseMongoSerializer):
     class Meta:
         model = Eleve
 
+class SubdivisionSerializer(serializers.Serializer):
+    """Serializer pour les subdivisions (EmbeddedDocument)"""
+    nom = serializers.CharField(max_length=100, required=False)
+    profPrincipal = serializers.CharField(required=False)
+    
+    def to_representation(self, instance):
+        """Convertit l'instance Subdivision en dictionnaire"""
+        if isinstance(instance, dict):
+            return instance
+        return {
+            'nom': instance.nom if hasattr(instance, 'nom') else None,
+            'profPrincipal': str(instance.profPrincipal.id) if hasattr(instance, 'profPrincipal') and instance.profPrincipal else None
+        }
+
 class ClasseSerializer(BaseMongoSerializer):
     id = serializers.CharField(read_only=True)
     nom = serializers.CharField(max_length=100)
     niveau = serializers.IntegerField()
     typeClasse = serializers.ChoiceField(choices=["primaire","secondaire"])
     seuilPromotion = serializers.IntegerField(required=False)
-    subdivisions = serializers.ListField(required=False)
+    subdivisions = SubdivisionSerializer(many=True, required=False, read_only=True)
     createdAt = serializers.DateTimeField(read_only=True)
     updatedAt = serializers.DateTimeField(read_only=True)
+    
+    def to_representation(self, instance):
+        """Sérialise l'instance Classe avec les subdivisions"""
+        data = {
+            'id': str(instance.id),
+            'nom': instance.nom,
+            'niveau': instance.niveau,
+            'typeClasse': instance.typeClasse,
+            'seuilPromotion': instance.seuilPromotion if hasattr(instance, 'seuilPromotion') else None,
+            'createdAt': instance.createdAt.isoformat() if hasattr(instance, 'createdAt') and instance.createdAt else None,
+            'updatedAt': instance.updatedAt.isoformat() if hasattr(instance, 'updatedAt') and instance.updatedAt else None,
+        }
+        # Convertir les subdivisions en dictionnaires
+        if hasattr(instance, 'subdivisions') and instance.subdivisions:
+            subdivision_serializer = SubdivisionSerializer()
+            data['subdivisions'] = [
+                subdivision_serializer.to_representation(sub) for sub in instance.subdivisions
+            ]
+        else:
+            data['subdivisions'] = []
+        return data
     
     class Meta:
         model = Classe
